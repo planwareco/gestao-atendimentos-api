@@ -1,0 +1,72 @@
+# Blueprint do Render: API (web) + worker de filas + Redis (Key Value).
+# O banco fica no Neon — configure DATABASE_URL/DIRECT_URL no painel.
+services:
+  - type: web
+    name: gestao-atendimentos-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: node src/server.js
+    healthCheckPath: /health/ready
+    preDeployCommand: npx prisma migrate deploy
+    envVars:
+      - fromGroup: gestao-atendimentos
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: gestao-atendimentos-redis
+          property: connectionString
+
+  - type: worker
+    name: gestao-atendimentos-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: node src/worker.js
+    envVars:
+      - fromGroup: gestao-atendimentos
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: gestao-atendimentos-redis
+          property: connectionString
+
+  - type: keyvalue
+    name: gestao-atendimentos-redis
+    plan: starter
+    maxmemoryPolicy: noeviction # obrigatório para BullMQ
+    ipAllowList: []
+
+envVarGroups:
+  - name: gestao-atendimentos
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: API_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_ADMIN_SECRET
+        generateValue: true
+      - key: CHECKOUT_TOKEN_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: PAYMENTS_API_URL
+        value: https://payments.emanuelecode.tech
+      - key: PAYMENTS_API_TOKEN
+        sync: false
+      - key: PAYMENTS_PUBLIC_KEY
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false

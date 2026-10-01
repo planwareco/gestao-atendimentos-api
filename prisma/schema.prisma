@@ -1,0 +1,575 @@
+// =============================================================================
+// Gestão de Atendimentos — schema Prisma (PostgreSQL)
+//
+// Convenções:
+//  - Multi-tenant por coluna: toda tabela de domínio tem `empresaId`.
+//    Os índices compostos começam por `empresaId` porque toda consulta filtra por ele.
+//  - Dinheiro sempre em CENTAVOS (Int). Nada de float para valores monetários.
+//  - Percentuais em basis points (Int): 4000 = 40,00%.
+//  - Datas/horas em UTC (timestamptz). O fuso do negócio fica em Empresa.fusoHorario.
+//  - Nomes de tabelas/colunas em snake_case no banco (@@map/@map), camelCase no código.
+// =============================================================================
+
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "client"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+enum StatusEmpresa {
+  PENDENTE        // cadastrou, ainda não pagou a adesão
+  ATIVO
+  SOMENTE_LEITURA // definido pelo admin (ex.: mensalidade atrasada)
+  DESATIVADO      // definido pelo admin: sem login, dados preservados
+}
+
+enum Segmento {
+  SALAO_BELEZA
+  BARBEARIA
+  ESTETICA
+  PETSHOP
+  FISIOTERAPIA
+  CONSULTORIA
+  OUTRO
+}
+
+enum PapelUsuario {
+  PROPRIETARIO
+  RECEPCIONISTA
+  PROFISSIONAL
+}
+
+enum StatusRegistro {
+  ATIVO
+  INATIVO
+}
+
+enum StatusAtendimento {
+  AGENDADO
+  CONFIRMADO
+  REALIZADO
+  CANCELADO
+}
+
+enum StatusOrcamento {
+  RASCUNHO
+  ENVIADO
+  APROVADO
+  RECUSADO
+  EXPIRADO
+}
+
+enum StatusDespesa {
+  PENDENTE
+  PAGA
+}
+
+enum FormaPagamento {
+  DINHEIRO
+  PIX
+  CARTAO_CREDITO
+  CARTAO_DEBITO
+  BOLETO
+  TRANSFERENCIA
+  OUTRO
+}
+
+// Espelha o PaymentStatus do payment-system-mp
+enum StatusPagamento {
+  PENDING
+  IN_PROCESS
+  APPROVED
+  REJECTED
+  CANCELLED
+  REFUNDED
+  CHARGED_BACK
+}
+
+// -----------------------------------------------------------------------------
+// Catálogo comercial (plano Start + módulos)
+// -----------------------------------------------------------------------------
+
+model Plano {
+  id                String   @id @default(uuid()) @db.Uuid
+  codigo            String   @unique @db.VarChar(40)
+  nome              String   @db.VarChar(80)
+  precoBaseCentavos Int      @map("preco_base_centavos")
+  ativo             Boolean  @default(true)
+  criadoEm          DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm      DateTime @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+
+  @@map("planos")
+}
+
+model Modulo {
+  codigo        String   @id @db.VarChar(40)
+  nome          String   @db.VarChar(80)
+  descricao     String?  @db.VarChar(300)
+  precoCentavos Int      @map("preco_centavos")
+  obrigatorio   Boolean  @default(false)
+  ativo         Boolean  @default(true)
+  ordem         Int      @default(0)
+  criadoEm      DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm  DateTime @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+
+  empresas EmpresaModulo[]
+
+  @@map("modulos")
+}
+
+// -----------------------------------------------------------------------------
+// Tenant
+// -----------------------------------------------------------------------------
+
+model Empresa {
+  id                     String        @id @default(uuid()) @db.Uuid
+  nome                   String        @db.VarChar(150)
+  nomeFantasia           String?       @map("nome_fantasia") @db.VarChar(150)
+  documento              String?       @db.VarChar(14)
+  email                  String        @db.VarChar(160)
+  telefone               String?       @db.VarChar(20)
+  whatsapp               String?       @db.VarChar(20)
+  segmento               Segmento      @default(OUTRO)
+  status                 StatusEmpresa @default(PENDENTE)
+  motivoStatus           String?       @map("motivo_status") @db.VarChar(300)
+  valorMensalCentavos    Int           @map("valor_mensal_centavos")
+  endereco               Json?
+  aparencia              Json          @default("{}")
+  camposPersonalizados   Json          @default("{}") @map("campos_personalizados")
+  fusoHorario            String        @default("America/Sao_Paulo") @map("fuso_horario") @db.VarChar(60)
+  proximoNumeroOrcamento Int           @default(1) @map("proximo_numero_orcamento")
+  ativadoEm              DateTime?     @map("ativado_em") @db.Timestamptz(3)
+  criadoEm               DateTime      @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm           DateTime      @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+
+  modulos             EmpresaModulo[]
+  usuarios            Usuario[]
+  clientes            Cliente[]
+  servicos            Servico[]
+  profissionais       Profissional[]
+  atendimentos        Atendimento[]
+  orcamentos          Orcamento[]
+  categoriasDespesa   CategoriaDespesa[]
+  despesas            Despesa[]
+  pagamentosAssinatura PagamentoAssinatura[]
+
+  @@index([status])
+  @@index([criadoEm])
+  @@map("empresas")
+}
+
+model EmpresaModulo {
+  empresaId     String   @map("empresa_id") @db.Uuid
+  moduloCodigo  String   @map("modulo_codigo") @db.VarChar(40)
+  ativo         Boolean  @default(true)
+  precoCentavos Int      @map("preco_centavos") // snapshot do preço contratado
+  criadoEm      DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm  DateTime @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+
+  empresa Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  modulo  Modulo  @relation(fields: [moduloCodigo], references: [codigo])
+
+  @@id([empresaId, moduloCodigo])
+  @@index([moduloCodigo])
+  @@map("empresa_modulos")
+}
+
+// -----------------------------------------------------------------------------
+// Usuários do tenant + sessões
+// -----------------------------------------------------------------------------
+
+model Usuario {
+  id            String       @id @default(uuid()) @db.Uuid
+  empresaId     String       @map("empresa_id") @db.Uuid
+  nome          String       @db.VarChar(120)
+  email         String       @unique @db.VarChar(160) // login global por e-mail
+  senhaHash     String       @map("senha_hash")
+  papel         PapelUsuario
+  ativo         Boolean      @default(true)
+  ultimoLoginEm DateTime?    @map("ultimo_login_em") @db.Timestamptz(3)
+  criadoEm      DateTime     @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm  DateTime     @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+
+  empresa       Empresa        @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  profissional  Profissional?
+  refreshTokens RefreshToken[]
+
+  @@index([empresaId, papel])
+  @@map("usuarios")
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  usuarioId  String    @map("usuario_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash") @db.VarChar(64)
+  familia    String    @db.Uuid // todos os tokens de uma mesma sessão (rotação)
+  expiraEm   DateTime  @map("expira_em") @db.Timestamptz(3)
+  revogadoEm DateTime? @map("revogado_em") @db.Timestamptz(3)
+  ip         String?   @db.VarChar(64)
+  userAgent  String?   @map("user_agent") @db.VarChar(300)
+  criadoEm   DateTime  @default(now()) @map("criado_em") @db.Timestamptz(3)
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@index([familia])
+  @@map("refresh_tokens")
+}
+
+// -----------------------------------------------------------------------------
+// Super admin da plataforma (separado dos tenants)
+// -----------------------------------------------------------------------------
+
+model Admin {
+  id                String    @id @default(uuid()) @db.Uuid
+  nome              String    @db.VarChar(120)
+  email             String    @unique @db.VarChar(160)
+  senhaHash         String    @map("senha_hash")
+  ativo             Boolean   @default(true)
+  totpSegredoCifrado String?  @map("totp_segredo_cifrado")
+  totpAtivo         Boolean   @default(false) @map("totp_ativo")
+  ultimoLoginEm     DateTime? @map("ultimo_login_em") @db.Timestamptz(3)
+  criadoEm          DateTime  @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm      DateTime  @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+
+  refreshTokens AdminRefreshToken[]
+
+  @@map("admins")
+}
+
+model AdminRefreshToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  adminId    String    @map("admin_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash") @db.VarChar(64)
+  familia    String    @db.Uuid
+  expiraEm   DateTime  @map("expira_em") @db.Timestamptz(3)
+  revogadoEm DateTime? @map("revogado_em") @db.Timestamptz(3)
+  ip         String?   @db.VarChar(64)
+  userAgent  String?   @map("user_agent") @db.VarChar(300)
+  criadoEm   DateTime  @default(now()) @map("criado_em") @db.Timestamptz(3)
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([familia])
+  @@map("admin_refresh_tokens")
+}
+
+// -----------------------------------------------------------------------------
+// Pagamento de adesão (via payment-system-mp) + idempotência
+// -----------------------------------------------------------------------------
+
+model PagamentoAssinatura {
+  id               String          @id @default(uuid()) @db.Uuid
+  empresaId        String          @map("empresa_id") @db.Uuid
+  gatewayPaymentId String          @unique @map("gateway_payment_id") @db.VarChar(64)
+  mpPaymentId      String?         @map("mp_payment_id") @db.VarChar(64)
+  metodo           String          @db.VarChar(30)
+  status           StatusPagamento
+  valorCentavos    Int             @map("valor_centavos")
+  aprovadoEm       DateTime?       @map("aprovado_em") @db.Timestamptz(3)
+  ultimaSincronizacaoEm DateTime?  @map("ultima_sincronizacao_em") @db.Timestamptz(3)
+  criadoEm         DateTime        @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm     DateTime        @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+
+  empresa Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@index([empresaId])
+  @@index([status, criadoEm])
+  @@map("pagamentos_assinatura")
+}
+
+model ChaveIdempotencia {
+  id             String   @id @default(uuid()) @db.Uuid
+  escopo         String   @db.VarChar(120)
+  chave          String   @db.VarChar(120)
+  hashRequisicao String   @map("hash_requisicao") @db.VarChar(64)
+  statusCode     Int?     @map("status_code")
+  resposta       Json?
+  criadoEm       DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
+  expiraEm       DateTime @map("expira_em") @db.Timestamptz(3)
+
+  @@unique([escopo, chave])
+  @@index([expiraEm])
+  @@map("chaves_idempotencia")
+}
+
+// -----------------------------------------------------------------------------
+// Domínio do negócio
+// -----------------------------------------------------------------------------
+
+model Cliente {
+  id             String         @id @default(uuid()) @db.Uuid
+  empresaId      String         @map("empresa_id") @db.Uuid
+  nome           String         @db.VarChar(150)
+  telefone       String?        @db.VarChar(20)
+  whatsapp       String?        @db.VarChar(20)
+  email          String?        @db.VarChar(160)
+  documento      String?        @db.VarChar(14)
+  dataNascimento DateTime?      @map("data_nascimento") @db.Date
+  cep            String?        @db.VarChar(8)
+  logradouro     String?        @db.VarChar(150)
+  numero         String?        @db.VarChar(20)
+  complemento    String?        @db.VarChar(100)
+  bairro         String?        @db.VarChar(100)
+  cidade         String?        @db.VarChar(100)
+  estado         String?        @db.Char(2)
+  observacoes    String?        @db.VarChar(2000)
+  status         StatusRegistro @default(ATIVO)
+  camposExtras   Json           @default("{}") @map("campos_extras")
+  criadoEm       DateTime       @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm   DateTime       @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+
+  empresa      Empresa       @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  atendimentos Atendimento[]
+  orcamentos   Orcamento[]
+
+  @@unique([empresaId, documento])
+  @@index([empresaId, nome])
+  @@index([empresaId, status])
+  @@map("clientes")
+}
+
+model Servico {
+  id             String         @id @default(uuid()) @db.Uuid
+  empresaId      String         @map("empresa_id") @db.Uuid
+  nome           String         @db.VarChar(120)
+  descricao      String?        @db.VarChar(500)
+  categoria      String?        @db.VarChar(80)
+  valorCentavos  Int            @map("valor_centavos")
+  duracaoMinutos Int            @map("duracao_minutos")
+  status         StatusRegistro @default(ATIVO)
+  criadoEm       DateTime       @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm   DateTime       @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+
+  empresa          Empresa               @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  itensAtendimento AtendimentoItem[]
+  itensOrcamento   OrcamentoItem[]
+  profissionais    ProfissionalServico[]
+
+  @@unique([empresaId, nome])
+  @@index([empresaId, status])
+  @@map("servicos")
+}
+
+model Profissional {
+  id              String         @id @default(uuid()) @db.Uuid
+  empresaId       String         @map("empresa_id") @db.Uuid
+  usuarioId       String?        @unique @map("usuario_id") @db.Uuid
+  nome            String         @db.VarChar(120)
+  email           String?        @db.VarChar(160)
+  telefone        String?        @db.VarChar(20)
+  cor             String?        @db.VarChar(9)
+  comissaoBps     Int            @default(0) @map("comissao_bps")
+  // { "1": [{"inicio":"08:00","fim":"12:00"}], ... } chaves 0 (domingo) a 6 (sábado)
+  horarioTrabalho Json           @default("{}") @map("horario_trabalho")
+  status          StatusRegistro @default(ATIVO)
+  criadoEm        DateTime       @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm    DateTime       @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+
+  empresa      Empresa               @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  usuario      Usuario?              @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+  servicos     ProfissionalServico[]
+  atendimentos Atendimento[]
+
+  @@index([empresaId, status])
+  @@map("profissionais")
+}
+
+model ProfissionalServico {
+  profissionalId String @map("profissional_id") @db.Uuid
+  servicoId      String @map("servico_id") @db.Uuid
+
+  profissional Profissional @relation(fields: [profissionalId], references: [id], onDelete: Cascade)
+  servico      Servico      @relation(fields: [servicoId], references: [id], onDelete: Cascade)
+
+  @@id([profissionalId, servicoId])
+  @@index([servicoId])
+  @@map("profissional_servicos")
+}
+
+model Atendimento {
+  id                    String            @id @default(uuid()) @db.Uuid
+  empresaId             String            @map("empresa_id") @db.Uuid
+  clienteId             String            @map("cliente_id") @db.Uuid
+  profissionalId        String?           @map("profissional_id") @db.Uuid
+  orcamentoId           String?           @unique @map("orcamento_id") @db.Uuid
+  inicio                DateTime          @db.Timestamptz(3)
+  fim                   DateTime          @db.Timestamptz(3)
+  status                StatusAtendimento @default(AGENDADO)
+  encaixe               Boolean           @default(false)
+  observacoes           String?           @db.VarChar(2000)
+  subtotalCentavos      Int               @map("subtotal_centavos")
+  descontoCentavos      Int               @default(0) @map("desconto_centavos")
+  acrescimoCentavos     Int               @default(0) @map("acrescimo_centavos")
+  totalCentavos         Int               @map("total_centavos")
+  comissaoTotalCentavos Int               @default(0) @map("comissao_total_centavos")
+  formaPagamento        FormaPagamento?   @map("forma_pagamento")
+  camposExtras          Json              @default("{}") @map("campos_extras")
+  confirmadoEm          DateTime?         @map("confirmado_em") @db.Timestamptz(3)
+  realizadoEm           DateTime?         @map("realizado_em") @db.Timestamptz(3)
+  canceladoEm           DateTime?         @map("cancelado_em") @db.Timestamptz(3)
+  motivoCancelamento    String?           @map("motivo_cancelamento") @db.VarChar(300)
+  criadoPorId           String?           @map("criado_por_id") @db.Uuid
+  criadoEm              DateTime          @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm          DateTime          @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+
+  empresa      Empresa           @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  cliente      Cliente           @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  profissional Profissional?     @relation(fields: [profissionalId], references: [id], onDelete: SetNull)
+  orcamento    Orcamento?        @relation(fields: [orcamentoId], references: [id], onDelete: SetNull)
+  itens        AtendimentoItem[]
+
+  @@index([empresaId, inicio])
+  @@index([empresaId, status, inicio])
+  @@index([empresaId, profissionalId, inicio])
+  @@index([empresaId, clienteId, inicio])
+  @@map("atendimentos")
+}
+
+model AtendimentoItem {
+  id                    String @id @default(uuid()) @db.Uuid
+  atendimentoId         String @map("atendimento_id") @db.Uuid
+  servicoId             String @map("servico_id") @db.Uuid
+  descricao             String @db.VarChar(150) // snapshot do nome do serviço
+  quantidade            Int    @default(1)
+  valorUnitarioCentavos Int    @map("valor_unitario_centavos")
+  totalCentavos         Int    @map("total_centavos")
+  duracaoMinutos        Int    @map("duracao_minutos")
+  comissaoCentavos      Int    @default(0) @map("comissao_centavos")
+
+  atendimento Atendimento @relation(fields: [atendimentoId], references: [id], onDelete: Cascade)
+  servico     Servico     @relation(fields: [servicoId], references: [id], onDelete: Restrict)
+
+  @@index([atendimentoId])
+  @@index([servicoId])
+  @@map("atendimento_itens")
+}
+
+model Orcamento {
+  id                String          @id @default(uuid()) @db.Uuid
+  empresaId         String          @map("empresa_id") @db.Uuid
+  numero            Int
+  clienteId         String          @map("cliente_id") @db.Uuid
+  data              DateTime        @db.Date
+  validade          DateTime?       @db.Date
+  observacoes       String?         @db.VarChar(2000)
+  subtotalCentavos  Int             @map("subtotal_centavos")
+  descontoCentavos  Int             @default(0) @map("desconto_centavos")
+  acrescimoCentavos Int             @default(0) @map("acrescimo_centavos")
+  totalCentavos     Int             @map("total_centavos")
+  status            StatusOrcamento @default(RASCUNHO)
+  enviadoEm         DateTime?       @map("enviado_em") @db.Timestamptz(3)
+  aprovadoEm        DateTime?       @map("aprovado_em") @db.Timestamptz(3)
+  recusadoEm        DateTime?       @map("recusado_em") @db.Timestamptz(3)
+  criadoEm          DateTime        @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm      DateTime        @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+
+  empresa     Empresa         @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  cliente     Cliente         @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  itens       OrcamentoItem[]
+  pdf         OrcamentoPdf?
+  atendimento Atendimento?
+
+  @@unique([empresaId, numero])
+  @@index([empresaId, status])
+  @@index([empresaId, clienteId])
+  @@index([status, validade])
+  @@map("orcamentos")
+}
+
+model OrcamentoItem {
+  id                    String  @id @default(uuid()) @db.Uuid
+  orcamentoId           String  @map("orcamento_id") @db.Uuid
+  servicoId             String? @map("servico_id") @db.Uuid
+  descricao             String  @db.VarChar(150)
+  quantidade            Int     @default(1)
+  valorUnitarioCentavos Int     @map("valor_unitario_centavos")
+  totalCentavos         Int     @map("total_centavos")
+
+  orcamento Orcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  servico   Servico?  @relation(fields: [servicoId], references: [id], onDelete: SetNull)
+
+  @@index([orcamentoId])
+  @@index([servicoId])
+  @@map("orcamento_itens")
+}
+
+// PDF guardado à parte para não pesar as consultas de orçamento
+model OrcamentoPdf {
+  orcamentoId String   @id @map("orcamento_id") @db.Uuid
+  versao      String   @db.VarChar(64) // hash do conteúdo que gerou o PDF
+  conteudo    Bytes
+  geradoEm    DateTime @default(now()) @map("gerado_em") @db.Timestamptz(3)
+
+  orcamento Orcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+
+  @@map("orcamento_pdfs")
+}
+
+model CategoriaDespesa {
+  id        String   @id @default(uuid()) @db.Uuid
+  empresaId String   @map("empresa_id") @db.Uuid
+  nome      String   @db.VarChar(60)
+  cor       String?  @db.VarChar(9)
+  ativo     Boolean  @default(true)
+  criadoEm  DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
+
+  empresa  Empresa   @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  despesas Despesa[]
+
+  @@unique([empresaId, nome])
+  @@map("categorias_despesa")
+}
+
+model Despesa {
+  id             String          @id @default(uuid()) @db.Uuid
+  empresaId      String          @map("empresa_id") @db.Uuid
+  categoriaId    String          @map("categoria_id") @db.Uuid
+  descricao      String          @db.VarChar(150)
+  valorCentavos  Int             @map("valor_centavos")
+  data           DateTime        @db.Date
+  formaPagamento FormaPagamento? @map("forma_pagamento")
+  observacao     String?         @db.VarChar(1000)
+  status         StatusDespesa   @default(PAGA)
+  criadoEm       DateTime        @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm   DateTime        @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+
+  empresa   Empresa          @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  categoria CategoriaDespesa @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+
+  @@index([empresaId, data])
+  @@index([empresaId, categoriaId])
+  @@map("despesas")
+}
+
+// -----------------------------------------------------------------------------
+// Auditoria de operações sensíveis
+// -----------------------------------------------------------------------------
+
+model LogAuditoria {
+  id         String   @id @default(uuid()) @db.Uuid
+  empresaId  String?  @map("empresa_id") @db.Uuid
+  adminId    String?  @map("admin_id") @db.Uuid
+  usuarioId  String?  @map("usuario_id") @db.Uuid
+  acao       String   @db.VarChar(80)
+  entidade   String   @db.VarChar(60)
+  entidadeId String?  @map("entidade_id") @db.VarChar(64)
+  dados      Json?
+  ip         String?  @db.VarChar(64)
+  criadoEm   DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
+
+  @@index([empresaId, criadoEm])
+  @@index([adminId, criadoEm])
+  @@index([acao, criadoEm])
+  @@map("logs_auditoria")
+}
