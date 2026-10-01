@@ -3,6 +3,7 @@ import { AbstractRepository } from '../../core/AbstractRepository.js';
 export const CLIENTE_SELECT = {
   id: true,
   nome: true,
+  informacaoAdicional: true,
   telefone: true,
   whatsapp: true,
   email: true,

@@ -33,6 +33,7 @@ const atualizarSchema = Joi.object({
     estado: uf(),
   }).allow(null),
   aparencia: Joi.object({
+    nomeSistema: Joi.string().trim().max(40).allow(null).description('Nome exibido no topo do menu, junto da logo (null = nome da empresa)'),
     corPrimaria: hexColor(),
     corSecundaria: hexColor(),
     tema: Joi.string().valid('claro', 'escuro'),

@@ -82,6 +82,7 @@ export const CATEGORIAS_DESPESA_PADRAO = [
 ];
 
 export const APARENCIA_PADRAO = Object.freeze({
+  nomeSistema: null, // nome exibido no topo do menu (null = nome da empresa)
   corPrimaria: '#6D5EF8',
   corSecundaria: '#14B8A6',
   tema: 'claro',

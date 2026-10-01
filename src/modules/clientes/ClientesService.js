@@ -19,6 +19,7 @@ export class ClientesService extends AbstractService {
       const digitos = busca.replace(/\D/g, '');
       where.OR = [
         { nome: { contains: busca, mode: 'insensitive' } },
+        { informacaoAdicional: { contains: busca, mode: 'insensitive' } },
         { email: { contains: busca, mode: 'insensitive' } },
         ...(digitos.length >= 3 ? [{ telefone: { contains: digitos } }, { whatsapp: { contains: digitos } }, { documento: { contains: digitos } }] : []),
       ];

@@ -4,6 +4,7 @@ import { cep, dateOnly, documento, idParam, optionalText, pagination, phone, tex
 
 const campos = {
   nome: text(150).min(2),
+  informacaoAdicional: optionalText(500).description('Informação adicional (aparece logo após o nome)'),
   telefone: phone().allow(null),
   whatsapp: phone().allow(null),
   email: Joi.string().trim().lowercase().email().max(160).allow(null),

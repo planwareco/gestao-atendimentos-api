@@ -416,6 +416,7 @@ AGENDADO ──► CONFIRMADO ──► REALIZADO (final)
 
 ### Clientes
 
+- Campo livre **`informacaoAdicional`** (até 500 caracteres), exibido logo após o nome e incluído na busca.
 - Resumo comercial: total gasto, ticket médio, frequência média, dias desde o último atendimento, situação de retorno (`EM_DIA`, `PROVAVEL_RETORNO`, `ATRASADO`) e próximo agendamento.
 - `GET /v1/clientes/inativos?dias=60` (reativação) e `GET /v1/clientes/aniversariantes?dias=7`.
 - Cliente com histórico **não é excluído** (409): inative com `status: INATIVO`. Soft delete só onde há motivo real.
@@ -810,5 +811,3 @@ Fica de fora do MVP, mas o modelo já comporta:
 ---
 
 Feito com 💪 e precisão de mira, na base do **Sotov**, por **Jefferson Santos**.
-#   g e s t a o - a t e n d i m e n t o s - a p i  
- 
