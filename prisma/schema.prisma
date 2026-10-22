@@ -11,8 +11,11 @@
 // =============================================================================
 
 generator client {
-  provider   = "prisma-client-js"
-  engineType = "client"
+  provider      = "prisma-client-js"
+  // Engine padrão (biblioteca nativa) — a Vercel empacota esse arquivo automaticamente.
+  // O engineType = "client" (wasm) não era incluído no bundle da função na Vercel.
+  // rhel-openssl-3.0.x = sistema das funções da Vercel; native = sua máquina.
+  binaryTargets = ["native", "rhel-openssl-3.0.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {

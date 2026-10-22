@@ -1,5 +1,5 @@
 /**
- * Prisma Client (Rust-free: engineType = "client" + driver adapter `pg`).
+ * Prisma Client (engine nativo + driver adapter `pg`).
  * - Pool de conexões explícito (DATABASE_POOL_MAX) — importante no Neon/Render.
  * - statement_timeout evita queries presas segurando conexão.
  * - Queries lentas (> 500ms) são logadas para análise com EXPLAIN.
