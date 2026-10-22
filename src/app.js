@@ -110,3 +110,18 @@ export function createApp(container, { state = { shuttingDown: false }, disableR
   app.use(errorHandler);
   return app;
 }
+
+/**
+ * Handler padrão para a Vercel (Express zero-config).
+ * A Vercel pode escolher este arquivo como entrada e exige `export default` de uma função.
+ * O app só é montado na primeira requisição (lazy), então importar `createApp`
+ * em testes ou no server.js continua sem efeito colateral.
+ */
+let vercelApp;
+export default async function vercelHandler(req, res) {
+  if (!vercelApp) {
+    const { createContainer } = await import('./container.js');
+    vercelApp = createApp(createContainer());
+  }
+  return vercelApp(req, res);
+}
