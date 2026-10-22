@@ -20,7 +20,7 @@ const cor = (c, fallback) => (/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(c ?? '')
 
 export function orcamentoHtml({ orcamento: o, empresa: e }) {
   const primaria = cor(e.aparencia?.corPrimaria, '#6D5EF8');
-  const logo = e.aparencia?.logoUrl?.startsWith('https://') ? `<img class="logo" src="${esc(e.aparencia.logoUrl)}" alt="">` : '';
+  const logo = /^(https:\/\/|data:image\/(png|jpeg|webp);base64,)/.test(e.aparencia?.logoUrl ?? '') ? `<img class="logo" src="${esc(e.aparencia.logoUrl)}" alt="">` : '';
   const end = e.endereco
     ? [e.endereco.logradouro, e.endereco.numero, e.endereco.bairro, e.endereco.cidade && `${e.endereco.cidade}/${e.endereco.estado ?? ''}`]
         .filter(Boolean)

@@ -77,8 +77,15 @@ export function createApp(container, { state = { shuttingDown: false }, disableR
     }),
   );
   app.use(compression());
-  app.use(express.json({ limit: '200kb' }));
+  app.use(express.json({ limit: '600kb' })); // folga para logo/favicon enviados como imagem (data URL)
   app.use(cookieParser());
+
+  // Dados da API são privados e mudam a todo momento: nenhum navegador, proxy ou CDN
+  // (ex.: Vercel) pode reaproveitar uma resposta antiga (agenda desatualizada após salvar).
+  app.use((_req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    next();
+  });
 
   app.use(healthRoutes({ prisma, queue, redis, cache, state }));
 

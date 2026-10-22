@@ -4,6 +4,26 @@ import { cep, documento, hexColor, optionalText, phone, text, uf } from '../../u
 import { SEGMENTOS } from './segmentos.js';
 import { camposPersonalizadosSchema } from './camposExtras.js';
 
+/**
+ * Logo/favicon: aceita um link https:// OU a imagem enviada pelo próprio sistema,
+ * como data URL base64 (o front redimensiona e converte para PNG/WebP antes de enviar).
+ * SVG fica de fora de propósito: pode carregar script embutido.
+ */
+const DATA_URL_IMAGEM = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+const LIMITE_LOGO = 350_000; // caracteres (~250 KB de imagem)
+const LIMITE_FAVICON = 60_000; // caracteres (~45 KB de imagem)
+const imagemSchema = (limite) =>
+  Joi.alternatives()
+    .try(
+      Joi.string().uri({ scheme: ['https'] }).max(500),
+      Joi.string()
+        .max(limite)
+        .pattern(DATA_URL_IMAGEM)
+        .messages({ 'string.max': 'Imagem muito grande. Envie um arquivo menor.', 'string.pattern.base': 'Formato de imagem inválido. Use PNG, JPG ou WebP.' }),
+    )
+    .allow(null)
+    .messages({ 'alternatives.match': 'Informe um link https:// ou envie uma imagem PNG, JPG ou WebP.' });
+
 const atualizarSchema = Joi.object({
   nome: text(150).min(2),
   nomeFantasia: optionalText(150),
@@ -37,14 +57,8 @@ const atualizarSchema = Joi.object({
     corPrimaria: hexColor(),
     corSecundaria: hexColor(),
     tema: Joi.string().valid('claro', 'escuro'),
-    logoUrl: Joi.string()
-      .uri({ scheme: ['https'] })
-      .max(500)
-      .allow(null),
-    faviconUrl: Joi.string()
-      .uri({ scheme: ['https'] })
-      .max(500)
-      .allow(null),
+    logoUrl: imagemSchema(LIMITE_LOGO).description('Link https:// ou imagem enviada (data:image/png|jpeg|webp;base64, até ~250 KB)'),
+    faviconUrl: imagemSchema(LIMITE_FAVICON).description('Link https:// ou imagem enviada (data:image/png|jpeg|webp;base64, até ~45 KB)'),
   }),
   camposPersonalizados: camposPersonalizadosSchema,
   aplicarPresetSegmento: Joi.boolean().default(false),
